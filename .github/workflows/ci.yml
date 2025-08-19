@@ -261,7 +261,7 @@ jobs:
           artifacts/**/*.tar.gz
           artifacts/**/*.zip
           artifacts/checksums.txt
-          artifacts/sbom-reports/*
+          artifacts/sbom.spdx.json
         body: |
           ## SpecGate Release ${{ steps.version.outputs.version }}
           
