@@ -2,6 +2,14 @@
 
 A lightweight OpenAPI validation proxy that validates HTTP responses against OpenAPI specifications in real-time.
 
+[![Build](https://github.com/sorenjohanson/specgate/actions/workflows/ci.yml/badge.svg)](https://github.com/sorenjohanson/specgate/actions/workflows/ci.yml)
+[![Go Version](https://img.shields.io/badge/go-1.25-blue)](https://golang.org)
+[![Go Report Card](https://goreportcard.com/badge/github.com/sorenjohanson/specgate)](https://goreportcard.com/report/github.com/sorenjohanson/specgate)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+[![Release](https://img.shields.io/github/v/release/sorenjohanson/specgate.svg)](https://github.com/sorenjohanson/specgate/releases)
+[![Issues](https://img.shields.io/github/issues/sorenjohanson/specgate.svg)](https://github.com/sorenjohanson/specgate/issues)
+
+
 ## Features
 
 - **Real-time validation** of HTTP responses against OpenAPI 3.0 and 2.0 specifications
