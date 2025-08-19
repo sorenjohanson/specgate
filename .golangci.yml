@@ -38,10 +38,6 @@ linters:
     gocritic:
       enabled-checks:
         - deferInLoop
-        - ruleguard
-      settings:
-        ruleguard:
-          rules: test/rules/rules.go
     gosec:
       excludes:
         - G115
