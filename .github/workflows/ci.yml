@@ -247,9 +247,6 @@ jobs:
             sha256sum "$file" >> checksums.txt
           fi
         done
-        
-        # Move all archives to root level
-        find . -name "*.tar.gz" -o -name "*.zip" -exec mv {} . \;
 
     - name: Create Release
       uses: softprops/action-gh-release@v2
