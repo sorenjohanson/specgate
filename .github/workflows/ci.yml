@@ -230,6 +230,7 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         path: artifacts
+        merge-multiple: true
 
     - name: Generate version
       id: version
@@ -257,8 +258,8 @@ jobs:
         prerelease: false
         generate_release_notes: true
         files: |
-          artifacts/*.tar.gz
-          artifacts/*.zip
+          artifacts/**/*.tar.gz
+          artifacts/**/*.zip
           artifacts/checksums.txt
           artifacts/sbom-reports/*
         body: |
