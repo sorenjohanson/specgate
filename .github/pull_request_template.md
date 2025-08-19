@@ -3,14 +3,11 @@
 ### What
 <!-- Brief description of changes -->
 
-
 ### Why
 <!-- Motivation for the changes -->
 
-
 ### How
 <!-- How you implemented the solution -->
-
 
 ### Testing
 <!-- How you tested the changes -->
@@ -19,14 +16,12 @@
 - [ ] Tested with sample OpenAPI spec
 - [ ] Verified logging output
 
-
 ### Breaking Changes
 <!-- Any breaking changes (if applicable) -->
 - [ ] No breaking changes
 - [ ] Breaking changes (please describe below)
 
 <!-- If breaking changes, describe them here -->
-
 
 ## Checklist
 
