@@ -27,6 +27,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"time"
 )
 
 func main() {
@@ -73,7 +74,15 @@ func main() {
 	fmt.Printf("Proxying to: %s\n", *upstream)
 	fmt.Printf("Mode: %s\n", *mode)
 
-	if err := http.ListenAndServe(":"+*port, proxy); err != nil {
+	server := &http.Server{
+		Addr:         ":" + *port,
+		Handler:      proxy,
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  120 * time.Second,
+	}
+
+	if err := server.ListenAndServe(); err != nil {
 		log.Fatal(err)
 	}
 }
