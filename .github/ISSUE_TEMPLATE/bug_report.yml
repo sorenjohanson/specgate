@@ -1,0 +1,141 @@
+name: Bug Report
+description: File a bug report to help us improve SpecGate
+title: "[Bug]: "
+labels: ["bug", "triage"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill out this bug report! Please provide as much detail as possible to help us resolve the issue quickly.
+
+  - type: checkboxes
+    id: prerequisites
+    attributes:
+      label: Prerequisites
+      description: Please confirm you've done the following before submitting this bug report.
+      options:
+        - label: I have searched existing issues to ensure this bug hasn't been reported already
+          required: true
+
+  - type: checkboxes
+    id: environment
+    attributes:
+      label: Environment
+      description: Where are you using SpecGate?
+      options:
+        - label: Development environment
+          required: false
+        - label: Production environment
+          required: false
+
+  - type: input
+    id: version
+    attributes:
+      label: SpecGate Version
+      description: What version of SpecGate are you running?
+      placeholder: "e.g., v1.0.0 or commit hash if built from source"
+    validations:
+      required: true
+
+  - type: textarea
+    id: bug-description
+    attributes:
+      label: Bug Description
+      description: A clear and concise description of what the bug is.
+      placeholder: "Describe the issue you're experiencing..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected-behavior
+    attributes:
+      label: Expected Behavior
+      description: What did you expect to happen?
+      placeholder: "Describe what should have happened..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual-behavior
+    attributes:
+      label: Actual Behavior
+      description: What actually happened?
+      placeholder: "Describe what actually happened..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction-steps
+    attributes:
+      label: Steps to Reproduce
+      description: Please provide detailed steps to reproduce the issue.
+      placeholder: |
+        1. Start SpecGate with command: `./specgate -spec ... -upstream ...`
+        2. Make a request to: `curl ...`
+        3. Observe the error: ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: command-line
+    attributes:
+      label: Command Line
+      description: What command are you using to start SpecGate?
+      placeholder: "./specgate -spec openapi.yaml -upstream http://localhost:3000 -mode warn -port 8080"
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log Output
+      description: Please provide relevant log output from SpecGate.
+      placeholder: "Paste any error messages, stack traces, or relevant log output here..."
+      render: shell
+
+  - type: textarea
+    id: openapi-spec
+    attributes:
+      label: OpenAPI Specification
+      description: If the issue is related to spec validation, please provide the relevant parts of your OpenAPI spec.
+      placeholder: "Paste relevant OpenAPI spec sections here (remove sensitive information)..."
+      render: yaml
+
+  - type: dropdown
+    id: validation-mode
+    attributes:
+      label: Validation Mode
+      description: Which validation mode are you using?
+      options:
+        - warn (default)
+        - strict
+        - report
+    validations:
+      required: true
+
+  - type: input
+    id: operating-system
+    attributes:
+      label: Operating System
+      description: What operating system are you running SpecGate on?
+      placeholder: "e.g., Ubuntu 22.04, macOS 13.0, Windows 11"
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      description: Add any other context about the problem here.
+      placeholder: "Any additional information that might help us understand the issue..."
+
+  - type: markdown
+    attributes:
+      value: |
+        ---
+        
+        **Note:** If you're using SpecGate in production and experiencing issues, please consider switching to `warn` mode temporarily while troubleshooting.
+        
+        Thank you for helping improve SpecGate! 🚀
