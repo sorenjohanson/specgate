@@ -1,3 +1,21 @@
+/**
+    SpecGate - A lightweight OpenAPI validation proxy for real-time API response validation.
+    Copyright (C) 2025 Søren Johanson
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+**/
+
 package main
 
 import (
@@ -11,11 +29,13 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/getkin/kin-openapi/openapi3filter"
+	"github.com/getkin/kin-openapi/routers"
 	"github.com/getkin/kin-openapi/routers/gorillamux"
 )
 
@@ -33,13 +53,19 @@ type ValidatingProxy struct {
 	proxy    *httputil.ReverseProxy
 	mode     Mode
 	logger   *slog.Logger
+	router   routers.Router
 }
 
 func NewValidatingProxy(specPath, upstreamURL string, mode string) (*ValidatingProxy, error) {
+	// Validate mode first
+	validMode, err := parseMode(mode)
+	if err != nil {
+		return nil, err
+	}
+
 	loader := openapi3.NewLoader()
 
 	var spec *openapi3.T
-	var err error
 
 	// Check if specPath is a URL
 	if strings.HasPrefix(specPath, "http://") || strings.HasPrefix(specPath, "https://") {
@@ -66,17 +92,19 @@ func NewValidatingProxy(specPath, upstreamURL string, mode string) (*ValidatingP
 		{URL: upstreamURL},
 	}
 
-	// Create colored console handler similar to zerolog
 	logger := slog.New(&ColoredHandler{
 		output: os.Stderr,
 		level:  slog.LevelInfo,
 	})
 
+	router, _ := gorillamux.NewRouter(spec)
+
 	vp := &ValidatingProxy{
 		spec:     spec,
 		upstream: upstream,
-		mode:     Mode(mode),
+		mode:     validMode,
 		logger:   logger,
+		router:   router,
 	}
 
 	vp.proxy = &httputil.ReverseProxy{
@@ -96,37 +124,54 @@ func (vp *ValidatingProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (vp *ValidatingProxy) validateResponse(resp *http.Response) error {
-	// Only validate JSON responses
 	contentType := resp.Header.Get("Content-Type")
 	if !strings.Contains(contentType, "application/json") {
 		return nil
 	}
 
-	// Read and buffer the body
-	bodyBytes, err := io.ReadAll(resp.Body)
+	const maxSize = 10 * 1024 * 1024 // 10MB
+	if contentLength := resp.Header.Get("Content-Length"); contentLength != "" {
+		if size, err := strconv.ParseInt(contentLength, 10, 64); err == nil && size > maxSize {
+			vp.logger.Warn("Response too large, skipping validation", "size", size)
+			return nil
+		}
+	}
+
+	limited := io.LimitReader(resp.Body, maxSize+1)
+	bodyBytes, err := io.ReadAll(limited)
 	if err != nil {
 		return err
 	}
+
+	if len(bodyBytes) > maxSize {
+		vp.logger.Warn("Response too large, skipping validation", "size", len(bodyBytes))
+		return nil
+	}
+
 	resp.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 
-	// Skip huge responses
-	if len(bodyBytes) > 10*1024*1024 {
-		vp.logger.Warn("Response too large, skipping validation")
-		return nil
-	}
-
-	// Find the operation in the spec
-	router, _ := gorillamux.NewRouter(vp.spec)
-	route, pathParams, err := router.FindRoute(resp.Request)
+	route, pathParams, err := vp.router.FindRoute(resp.Request)
 	if err != nil {
-		vp.logger.Warn("Undocumented endpoint",
-			"method", resp.Request.Method,
-			"path", resp.Request.URL.Path)
-		return nil
+		if isUndocumentedEndpoint(err) {
+			vp.logger.Warn("Undocumented endpoint",
+				"method", resp.Request.Method,
+				"path", resp.Request.URL.Path)
+			return nil
+		} else {
+			vp.logger.Error("Error finding route",
+				"error", err,
+				"method", resp.Request.Method,
+				"path", resp.Request.URL.Path)
+			return fmt.Errorf("route finding error: %w", err)
+		}
 	}
 
-	// Validate using the library's built-in validator
-	ctx := context.Background()
+	// For validation, use a separate reader as the previous one has already been consumed
+	// Otherwise, "Transferred partial file" errors will start showing up
+	validationReader := io.NopCloser(bytes.NewReader(bodyBytes))
+
+	// Use the request context to respect cancellation signals
+	ctx := resp.Request.Context()
 	input := &openapi3filter.ResponseValidationInput{
 		RequestValidationInput: &openapi3filter.RequestValidationInput{
 			Request:    resp.Request,
@@ -135,7 +180,7 @@ func (vp *ValidatingProxy) validateResponse(resp *http.Response) error {
 		},
 		Status: resp.StatusCode,
 		Header: resp.Header,
-		Body:   io.NopCloser(bytes.NewReader(bodyBytes)),
+		Body:   validationReader,
 	}
 
 	if err := openapi3filter.ValidateResponse(ctx, input); err != nil {
@@ -145,18 +190,65 @@ func (vp *ValidatingProxy) validateResponse(resp *http.Response) error {
 			"path", resp.Request.URL.Path,
 			"status", resp.StatusCode)
 
-		// In strict mode, replace the response with an error
 		if vp.mode == ModeStrict {
 			errorBody, _ := json.Marshal(map[string]string{
 				"error":   "Response validation failed",
 				"details": err.Error(),
 			})
+
+			// Update headers to match the new response
 			resp.Body = io.NopCloser(bytes.NewReader(errorBody))
 			resp.StatusCode = 500
+			resp.Header.Set("Content-Type", "application/json")
+			resp.Header.Set("Content-Length", strconv.Itoa(len(errorBody)))
+
+			// Remove headers that are no longer valid for the error response
+			resp.Header.Del("Content-Encoding")
+			resp.Header.Del("Transfer-Encoding")
+			resp.Header.Del("ETag")
+			resp.Header.Del("Last-Modified")
 		}
 	}
 
 	return nil
+}
+
+func parseMode(mode string) (Mode, error) {
+	switch strings.ToLower(mode) {
+	case "strict":
+		return ModeStrict, nil
+	case "warn":
+		return ModeWarn, nil
+	case "report":
+		return ModeReport, nil
+	default:
+		return "", fmt.Errorf("invalid mode '%s': must be one of 'strict', 'warn', or 'report'", mode)
+	}
+}
+
+func isUndocumentedEndpoint(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	errMsg := strings.ToLower(err.Error())
+
+	undocumentedPatterns := []string{
+		"no matching operation",
+		"path not found",
+		"no route found",
+		"operation not found",
+		"no match found",
+		"unknown path",
+	}
+
+	for _, pattern := range undocumentedPatterns {
+		if strings.Contains(errMsg, pattern) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // ColoredHandler provides colored console output similar to zerolog
@@ -194,26 +286,39 @@ func (h *ColoredHandler) Handle(ctx context.Context, record slog.Record) error {
 		color = colorReset
 	}
 
+	var builder strings.Builder
+	builder.Grow(256) // Pre-allocate reasonable capacity
+
 	timestamp := time.Now().Format("15:04:05")
+	builder.WriteString(colorGray)
+	builder.WriteString(timestamp)
+	builder.WriteString(" ")
+	builder.WriteString(color)
+	builder.WriteString(record.Level.String())
+	builder.WriteString(colorReset)
 
-	fmt.Fprintf(h.output, "%s%s %s%s %s",
-		colorGray, timestamp,
-		color, record.Level.String(),
-		colorReset)
-
-	fmt.Fprintf(h.output, " %s", record.Message)
+	builder.WriteString(" ")
+	builder.WriteString(record.Message)
 
 	record.Attrs(func(attr slog.Attr) bool {
-		fmt.Fprintf(h.output, " %s=%v", attr.Key, attr.Value)
+		builder.WriteString(" ")
+		builder.WriteString(attr.Key)
+		builder.WriteString("=")
+		builder.WriteString(fmt.Sprintf("%v", attr.Value))
 		return true
 	})
 
 	for _, attr := range h.attrs {
-		fmt.Fprintf(h.output, " %s=%v", attr.Key, attr.Value)
+		builder.WriteString(" ")
+		builder.WriteString(attr.Key)
+		builder.WriteString("=")
+		builder.WriteString(fmt.Sprintf("%v", attr.Value))
 	}
 
-	fmt.Fprintln(h.output)
-	return nil
+	builder.WriteString("\n")
+
+	_, err := h.output.Write([]byte(builder.String()))
+	return err
 }
 
 func (h *ColoredHandler) WithAttrs(attrs []slog.Attr) slog.Handler {

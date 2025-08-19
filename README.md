@@ -94,9 +94,8 @@ It's possible to use SpecGate in production, but it requires re-routing existing
 Please share any issues you find if you do end up using SpecGate in production.
 
 ```bash
-# Run in strict mode to block invalid responses
 ./specgate \
-  -spec https://docs.example.com/openapi.json \
+  -spec https://api.example.com/openapi.json \
   -upstream https://api.example.com \
   -port 8080
 ```
