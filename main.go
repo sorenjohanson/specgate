@@ -39,6 +39,12 @@ func main() {
 	)
 	flag.Parse()
 
+	// Show help if no arguments provided
+	if len(os.Args) == 1 {
+		flag.Usage()
+		return
+	}
+
 	// GPL required copyright notice
 	fmt.Println("SpecGate Copyright (C) 2025 Søren Johanson")
 	fmt.Println("This program comes with ABSOLUTELY NO WARRANTY.")

@@ -12,7 +12,7 @@ A lightweight OpenAPI validation proxy that validates HTTP responses against Ope
 
 ## Features
 
-- **Real-time validation** of HTTP responses against OpenAPI 3.x and Swagger 2.0 specifications
+- **Real-time validation** of HTTP responses against OpenAPI 3.0 and 2.0 specifications
 - **Remote spec loading** from HTTP/HTTPS URLs with safety warnings
 - **Multiple validation modes**: strict, warn, report
 - **Colored logging** with timestamps and structured output
@@ -23,11 +23,7 @@ A lightweight OpenAPI validation proxy that validates HTTP responses against Ope
 
 ### Download Binary
 
-```bash
-# Download the latest release
-curl -L https://github.com/sorenjohanson/specgate/releases/latest/download/specgate -o specgate
-chmod +x specgate
-```
+Navigate to the [Releases](https://github.com/sorenjohanson/specgate/releases) page and download the package appropriate for your OS. Unpack the included `specgate` binary anywhere you like.
 
 ### Build from Source
 
