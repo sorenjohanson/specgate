@@ -67,7 +67,6 @@ func NewValidatingProxy(specPath, upstreamURL string, mode string) (*ValidatingP
 
 	var spec *openapi3.T
 
-	// Check if specPath is a URL
 	if strings.HasPrefix(specPath, "http://") || strings.HasPrefix(specPath, "https://") {
 		specURL, parseErr := url.Parse(specPath)
 		if parseErr != nil {
@@ -87,7 +86,6 @@ func NewValidatingProxy(specPath, upstreamURL string, mode string) (*ValidatingP
 		return nil, fmt.Errorf("invalid upstream URL: %w", err)
 	}
 
-	// Override the servers block with the upstream URL
 	spec.Servers = []*openapi3.Server{
 		{URL: upstreamURL},
 	}
@@ -129,48 +127,66 @@ func (vp *ValidatingProxy) validateResponse(resp *http.Response) error {
 		return nil
 	}
 
+	bodyBytes, err := vp.readResponseBody(resp)
+	if err != nil || bodyBytes == nil {
+		return err
+	}
+
+	route, pathParams, err := vp.findRouteForValidation(resp)
+	if err != nil {
+		return err
+	}
+	if route == nil {
+		return nil // undocumented endpoint
+	}
+
+	return vp.performValidation(resp, bodyBytes, route, pathParams)
+}
+
+func (vp *ValidatingProxy) readResponseBody(resp *http.Response) ([]byte, error) {
 	const maxSize = 10 * 1024 * 1024 // 10MB
 	if contentLength := resp.Header.Get("Content-Length"); contentLength != "" {
 		if size, err := strconv.ParseInt(contentLength, 10, 64); err == nil && size > maxSize {
 			vp.logger.Warn("Response too large, skipping validation", "size", size)
-			return nil
+			return nil, nil
 		}
 	}
 
 	limited := io.LimitReader(resp.Body, maxSize+1)
 	bodyBytes, err := io.ReadAll(limited)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if len(bodyBytes) > maxSize {
 		vp.logger.Warn("Response too large, skipping validation", "size", len(bodyBytes))
-		return nil
+		return nil, nil
 	}
 
 	resp.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+	return bodyBytes, nil
+}
 
+func (vp *ValidatingProxy) findRouteForValidation(resp *http.Response) (*routers.Route, map[string]string, error) {
 	route, pathParams, err := vp.router.FindRoute(resp.Request)
 	if err != nil {
 		if isUndocumentedEndpoint(err) {
 			vp.logger.Warn("Undocumented endpoint",
 				"method", resp.Request.Method,
 				"path", resp.Request.URL.Path)
-			return nil
-		} else {
-			vp.logger.Error("Error finding route",
-				"error", err,
-				"method", resp.Request.Method,
-				"path", resp.Request.URL.Path)
-			return fmt.Errorf("route finding error: %w", err)
+			return nil, nil, nil
 		}
+		vp.logger.Error("Error finding route",
+			"error", err,
+			"method", resp.Request.Method,
+			"path", resp.Request.URL.Path)
+		return nil, nil, fmt.Errorf("route finding error: %w", err)
 	}
+	return route, pathParams, nil
+}
 
-	// For validation, use a separate reader as the previous one has already been consumed
-	// Otherwise, "Transferred partial file" errors will start showing up
+func (vp *ValidatingProxy) performValidation(resp *http.Response, bodyBytes []byte, route *routers.Route, pathParams map[string]string) error {
 	validationReader := io.NopCloser(bytes.NewReader(bodyBytes))
-
-	// Use the request context to respect cancellation signals
 	ctx := resp.Request.Context()
 	input := &openapi3filter.ResponseValidationInput{
 		RequestValidationInput: &openapi3filter.RequestValidationInput{
@@ -191,26 +207,30 @@ func (vp *ValidatingProxy) validateResponse(resp *http.Response) error {
 			"status", resp.StatusCode)
 
 		if vp.mode == ModeStrict {
-			errorBody, _ := json.Marshal(map[string]string{
-				"error":   "Response validation failed",
-				"details": err.Error(),
-			})
-
-			// Update headers to match the new response
-			resp.Body = io.NopCloser(bytes.NewReader(errorBody))
-			resp.StatusCode = 500
-			resp.Header.Set("Content-Type", "application/json")
-			resp.Header.Set("Content-Length", strconv.Itoa(len(errorBody)))
-
-			// Remove headers that are no longer valid for the error response
-			resp.Header.Del("Content-Encoding")
-			resp.Header.Del("Transfer-Encoding")
-			resp.Header.Del("ETag")
-			resp.Header.Del("Last-Modified")
+			vp.replaceResponseWithError(resp, err)
 		}
 	}
 
 	return nil
+}
+
+func (vp *ValidatingProxy) replaceResponseWithError(resp *http.Response, validationErr error) {
+	errorBody, _ := json.Marshal(map[string]string{
+		"error":   "Response validation failed",
+		"details": validationErr.Error(),
+	})
+
+	// Update headers to match the new response
+	resp.Body = io.NopCloser(bytes.NewReader(errorBody))
+	resp.StatusCode = 500
+	resp.Header.Set("Content-Type", "application/json")
+	resp.Header.Set("Content-Length", strconv.Itoa(len(errorBody)))
+
+	// Remove headers that are no longer valid for the error response
+	resp.Header.Del("Content-Encoding")
+	resp.Header.Del("Transfer-Encoding")
+	resp.Header.Del("ETag")
+	resp.Header.Del("Last-Modified")
 }
 
 func parseMode(mode string) (Mode, error) {
@@ -267,11 +287,11 @@ const (
 	colorGray   = "\033[90m"
 )
 
-func (h *ColoredHandler) Enabled(ctx context.Context, level slog.Level) bool {
+func (h *ColoredHandler) Enabled(_ context.Context, level slog.Level) bool {
 	return level >= h.level
 }
 
-func (h *ColoredHandler) Handle(ctx context.Context, record slog.Record) error {
+func (h *ColoredHandler) Handle(_ context.Context, record slog.Record) error {
 	var color string
 	switch record.Level {
 	case slog.LevelError:
@@ -333,6 +353,6 @@ func (h *ColoredHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	}
 }
 
-func (h *ColoredHandler) WithGroup(name string) slog.Handler {
+func (h *ColoredHandler) WithGroup(_ string) slog.Handler {
 	return h
 }
