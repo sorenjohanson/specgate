@@ -157,7 +157,7 @@ jobs:
         fi
 
     - name: Upload build artifacts
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v5
       with:
         name: ${{ env.BINARY_NAME }}-${{ matrix.goos }}-${{ matrix.goarch }}
         path: ${{ env.ARCHIVE }}
@@ -206,7 +206,7 @@ jobs:
         sarif_file: grype.sarif
 
     - name: Upload SBOM artifacts
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v5
       with:
         name: sbom-reports
         path: |
